@@ -623,8 +623,6 @@ defmodule WebSockex do
       {:ok, frame, buffer} ->
         debug = Utils.sys_debug(debug, {:in, :frame, frame}, state)
 
-        execute_telemetry([:websockex, :frame, :received], state, %{frame: frame})
-
         handle_frame(frame, parent, debug, %{state | buffer: buffer})
 
       :incomplete ->
@@ -902,8 +900,7 @@ defmodule WebSockex do
 
     case res do
       :ok ->
-        execute_telemetry([:websockex, :frame, :sent], state, %{frame: frame})
-
+        :gen.reply(from, :ok)
         :gen.reply(from, :ok)
         debug = Utils.sys_debug(debug, {:socket_out, :sync_send, frame}, state)
         websocket_loop(parent, debug, state)
@@ -1034,8 +1031,6 @@ defmodule WebSockex do
   # Other State Functions
 
   defp module_init(parent, debug, state) do
-    execute_telemetry([:websockex, :connected], state)
-
     result = try_callback(state.module, :handle_connect, [state.conn, state.module_state])
 
     case result do
@@ -1067,8 +1062,7 @@ defmodule WebSockex do
 
   @spec terminate(any, pid, any, any) :: no_return
   defp terminate(reason, parent, debug, state) do
-    execute_telemetry([:websockex, :terminate], state, %{reason: reason})
-
+    do_terminate(reason, parent, debug, state)
     do_terminate(reason, parent, debug, state)
   end
 
@@ -1095,8 +1089,7 @@ defmodule WebSockex do
   defp handle_disconnect(reason, state, attempt) do
     status_map = %{conn: state.conn, reason: reason, attempt_number: attempt}
 
-    execute_telemetry([:websockex, :disconnected], state, status_map)
-
+    result = try_callback(state.module, :handle_disconnect, [status_map, state.module_state])
     result = try_callback(state.module, :handle_disconnect, [status_map, state.module_state])
 
     case result do
@@ -1176,14 +1169,5 @@ defmodule WebSockex do
           100 -> :ok
         end
     end
-  end
-
-  if WebSockex.Utils.otp_release() >= 21 do
-    defp execute_telemetry(event, state, extra_metadata \\ %{}) do
-      metadata = Map.merge(%{conn: state.conn, module: state.module}, extra_metadata)
-      :telemetry.execute(event, %{time: System.system_time()}, metadata)
-    end
-  else
-    defp execute_telemetry(_, _, _ \\ %{}), do: :ok
   end
 end
